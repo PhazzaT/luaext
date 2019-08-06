@@ -232,7 +232,6 @@ void pushClosure(lua_State *L, const C &c)
 	using OP = decltype(&C::operator());
 
 	lua_CFunction caller = [](lua_State *L) -> int {
-		// Zdob�d� funktor
 		C *c = (C *)lua_touserdata(L, lua_upvalueindex(1));
 		return methptr_proxy_<OP>::template call_op<&C::operator()>(L, *c);
 	};
@@ -242,20 +241,20 @@ void pushClosure(lua_State *L, const C &c)
 		c->~C();
 	};
 
-	// Tworzymy miejsce na funktor i kopiujemy go
+	// Allocate some place for the functor and copy it
 	void *mem = lua_newuserdata(L, sizeof(C));
 	C *pc = new (mem) C(c);
 
-	// Tworzymy metatabel� i umieszczamy w niej destruktor
+	// Create metatable and save the destructor
 	lua_newtable(L);
 	lua_pushliteral(L, "__gc");
 	lua_pushcfunction(L, destructor);
 	lua_rawset(L, -3);
 
-	// Ustawiamy metatabel� dla funktora
+	// Set metatable for the functor
 	lua_setmetatable(L, -2);
 
-	// Wrzucamy wo�acza na stos
+	// Push the caller on stack
 	lua_pushcclosure(L, caller, 1);
 }
 
@@ -308,13 +307,13 @@ struct help_<Ret(Args...)>
 
 		Ret operator()(Args... args)
 		{
-			// Wrzu� funkcj� na stos
+			// Push the function on stack
 			lua_rawgeti(L, LUA_REGISTRYINDEX, rid);
 			pusher_::pushArgs(L, args...);
 
-			// Wykonaj funkcj�
-			// TODO: Rozwa�y� pcall zamiast call
-			// i raportowanie b��d�w w inny spos�b?
+			// Execute
+			// TODO: Consider pcall-ing
+			// and handling errors in some other way
 			lua_call(L, sizeof...(Args), 1);
 			return popper_<Ret>::popArg(L, -1);
 		}
@@ -322,15 +321,15 @@ struct help_<Ret(Args...)>
 
 	static std::function<Ret(Args...)> call(lua_State *L)
 	{
-		// Umieszczamy nasz� funkcj� w tabeli
+		// Place the function in the table
 		int rid = luaL_ref(L, LUA_REGISTRYINDEX);
 		return std::function<Ret(Args...)>(LuaSimpleFunction(L, rid));
 	}
 };
 
-// Zak�ada, �e warto�� funkcji jest od�o�ona na szczycie stosu.
-// Nale�y uwa�a�, aby wyzerowa�/usun�� wska�nik przed usuni�ciem stanu Lua.
-// TODO: Rozszerzy� o mo�liwo�� zwracania tupli (kilka warto�ci zwracanych).
+// Assumes that the function is placed at the top of the stack.
+// The function object must not outlive the Lua state
+// TODO: Allow for returning multiple values (as an std::tuple)
 template <typename F>
 std::function<F> storeLuaFunction(lua_State *L)
 {
